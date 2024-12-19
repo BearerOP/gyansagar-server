@@ -7,7 +7,7 @@ const jwt = require("jsonwebtoken");
 
 //   try {
 //     const { email, password } = req.body;
-//     const existingUser = await User.findOne({ email });
+//     const existingUser = await User.findOne({ email }).lean();
 //     if (!existingUser) {
 //       return {
 //         success: false,
@@ -96,14 +96,25 @@ const jwt = require("jsonwebtoken");
 
 const loginOrRegister = async (req, res) => {
   try {
-    const { username, email, avatar, provider, providerId, role } = req.body;
+    const { username, email, password, avatar, provider, providerId, role } = req.body;
 
     // Check if the user already exists
-    let existingUser = await User.findOne({ email });
+    let existingUser = await User.findOne({ email }).lean();
 
     if (existingUser) {
       // User exists, proceed with login flow
       // Generate a JWT token
+
+      const isPasswordValid = await bcrypt.compare(password, existingUser.password);
+
+      if (!isPasswordValid) {
+        return {
+          success: false,
+          message: "Invalid email or password",
+          status: 401,
+        };
+      }
+      
       const token = jwt.sign({ id: existingUser._id }, process.env.SECRET_KEY);
       if (!token) {
         return {
@@ -133,6 +144,13 @@ const loginOrRegister = async (req, res) => {
         token,
         role: updatedUser.role,
         status: 200,
+        user:{
+          username: updatedUser.username,
+          email: updatedUser.email,
+          avatar: updatedUser.avatar,
+          role: updatedUser.role,
+          token: token
+        }
       };
     } else {
       // User does not exist, proceed with registration flow
@@ -172,6 +190,13 @@ const loginOrRegister = async (req, res) => {
         token,
         role: newUser.role,
         status: 201,
+        user:{
+          username: newUser.username,
+          email: newUser.email,
+          avatar: newUser.avatar,
+          role: newUser.role,
+          token: token
+        }
       };
     }
   } catch (error) {
