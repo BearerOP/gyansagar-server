@@ -1,5 +1,4 @@
-const User = require("../models/userModel.js");
-const Course = require("../models/courseModel.js");
+const { User } = require("../models/schema");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
@@ -7,7 +6,7 @@ const jwt = require("jsonwebtoken");
 
 //   try {
 //     const { email, password } = req.body;
-//     const existingUser = await User.findOne({ email }).lean();
+//     const existingUser = await User.findOne({ email });
 //     if (!existingUser) {
 //       return {
 //         success: false,
@@ -96,7 +95,7 @@ const jwt = require("jsonwebtoken");
 
 const loginOrRegister = async (req, res) => {
   try {
-    const { username, email, password, avatar, provider, providerId, role } = req.body;
+    const { username, email, avatar, provider, providerId, role } = req.body;
 
     // Check if the user already exists
     let existingUser = await User.findOne({ email }).lean();
@@ -104,17 +103,6 @@ const loginOrRegister = async (req, res) => {
     if (existingUser) {
       // User exists, proceed with login flow
       // Generate a JWT token
-
-      const isPasswordValid = await bcrypt.compare(password, existingUser.password);
-
-      if (!isPasswordValid) {
-        return {
-          success: false,
-          message: "Invalid email or password",
-          status: 401,
-        };
-      }
-      
       const token = jwt.sign({ id: existingUser._id }, process.env.SECRET_KEY);
       if (!token) {
         return {
@@ -144,13 +132,6 @@ const loginOrRegister = async (req, res) => {
         token,
         role: updatedUser.role,
         status: 200,
-        user:{
-          username: updatedUser.username,
-          email: updatedUser.email,
-          avatar: updatedUser.avatar,
-          role: updatedUser.role,
-          token: token
-        }
       };
     } else {
       // User does not exist, proceed with registration flow
@@ -190,19 +171,85 @@ const loginOrRegister = async (req, res) => {
         token,
         role: newUser.role,
         status: 201,
-        user:{
-          username: newUser.username,
-          email: newUser.email,
-          avatar: newUser.avatar,
-          role: newUser.role,
-          token: token
-        }
       };
     }
   } catch (error) {
     return {
       success: false,
       message: error.message || "Internal server error",
+      status: 500,
+    };
+  }
+};
+
+const login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    console.log(email, password);
+
+    const existingUser = await User.findOne({ email }).lean();
+    if (!existingUser) {
+      return {
+        success: false,
+        message: "Invalid email or not registered!",
+        status: 401,
+      };
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      password,
+      existingUser.password
+    );
+
+    if (!isPasswordValid) {
+      return {
+        status: 401,
+        success: false,
+        message: "Invalid email or password",
+      };
+    }
+    const token = jwt.sign({ id: existingUser._id }, process.env.SECRET_KEY);
+
+    if (!token) {
+      return {
+        success: "false",
+        message: " Token generation failed",
+        status: 500,
+      };
+    }
+
+    const authKeyInsertion = await User.findOneAndUpdate(
+      { _id: existingUser._id },
+      { accessToken: token },
+      { new: true }
+    );
+
+    if (!authKeyInsertion) {
+      return { message: "Token updation failed", success: false, status: 500 };
+    }
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      maxAge: 60 * 60 * 1000,
+    });
+
+    return {
+      message: "User logged in successfully",
+      success: true,
+      token,
+      user: {
+        username: existingUser.username,
+        email: existingUser.email,
+        avatar: existingUser.avatar,
+        role: existingUser.role,
+        token: token,
+      },
+      status: 200,
+    };
+  } catch (error) {
+    return {
+      message: error.message || "Internal server error",
+      success: false,
       status: 500,
     };
   }
@@ -283,7 +330,7 @@ const profile = async (req, res) => {
 };
 
 module.exports = {
-  // login,
+  login,
   // register,
   loginOrRegister,
   logout,
